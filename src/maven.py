@@ -6,6 +6,7 @@ xml.etree. Версии в виде ${свойство} и версии из dep
 подключённых через scope import файлов BOM.
 """
 
+import functools
 import re
 import urllib.error
 import urllib.request
@@ -16,6 +17,7 @@ from typing import Dict, List, Optional
 TIMEOUT = 60
 MAX_PARENTS = 20
 PLACEHOLDER = re.compile(r"\$\{([^}]+)\}")
+TRANSITIVE_SCOPES = ("compile", "runtime")
 
 
 class RepositoryError(Exception):
@@ -58,6 +60,7 @@ def pom_url(base: str, coordinates: str) -> str:
     return f"{base}/{path}/{artifact}/{version}/{artifact}-{version}.pom"
 
 
+@functools.lru_cache(maxsize=None)
 def download(url: str) -> bytes:
     """Скачивает файл по адресу."""
     try:
@@ -209,3 +212,27 @@ def direct_dependencies(base: str, coordinates: str) -> List[Dependency]:
     managed = {**imported_versions(base, chain, properties), **managed}
     return [to_dependency(item, properties, managed)
             for item in chain[0].dependencies]
+
+
+class MavenSource:
+    """Источник зависимостей для обхода графа.
+
+    Берутся только зависимости, которые Maven переносит транзитивно:
+    область compile или runtime и без optional. Пакеты, чей pom.xml
+    не удалось получить, становятся листьями, причина запоминается.
+    """
+
+    def __init__(self, base: str) -> None:
+        """Запоминает адрес репозитория."""
+        self.base = base
+        self.problems: Dict[str, str] = {}
+
+    def children(self, coordinates: str) -> List[str]:
+        """Возвращает транзитивные прямые зависимости пакета."""
+        try:
+            found = direct_dependencies(self.base, coordinates)
+        except RepositoryError as error:
+            self.problems[coordinates] = str(error)
+            return []
+        return [item.coordinates() for item in found
+                if item.scope in TRANSITIVE_SCOPES and not item.optional]

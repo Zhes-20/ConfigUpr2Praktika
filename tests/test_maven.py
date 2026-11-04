@@ -1,15 +1,12 @@
 """Тесты получения прямых зависимостей из pom.xml."""
 
-import contextlib
-import io
 import pathlib
 import shutil
 import tempfile
 import unittest
-import unittest.mock
 
-from src.app import main
 from src.maven import (
+    MavenSource,
     RepositoryError,
     direct_dependencies,
     parse_pom,
@@ -172,41 +169,23 @@ class DependenciesTest(unittest.TestCase):
         self.assertEqual(found[0].coordinates(), "org.lib:from-bom:1.0.4")
 
 
-class AppTest(unittest.TestCase):
-    """Вывод приложения на этапе 2."""
+class SourceTest(unittest.TestCase):
+    """Источник зависимостей для графа."""
 
-    def run_app(self, *argv: str) -> tuple:
-        """Запускает приложение и возвращает код, вывод и ошибки."""
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = main(list(argv))
-        return code, out.getvalue(), err.getvalue()
-
-    def test_prints_dependencies(self) -> None:
-        """Печатаются координаты, область и признак optional."""
+    def test_only_transitive_dependencies(self) -> None:
+        """Для графа берутся compile и runtime без optional."""
         repo = FakeRepository()
         try:
-            with unittest.mock.patch(
-                "src.config.MAVEN_CENTRAL", repo.base
-            ), unittest.mock.patch(
-                "src.config.urlparse",
-                return_value=unittest.mock.Mock(scheme="https", netloc="x"),
-            ):
-                code, out, _ = self.run_app("-p", "org.demo:app:1.0",
-                                            "-s", repo.base)
+            source = MavenSource(repo.base)
+            children = source.children("org.demo:app:1.0")
+            missing = source.children("org.demo:none:1.0")
         finally:
             repo.remove()
-        self.assertEqual(code, 0)
-        self.assertIn("  org.lib:managed:2.5 (compile)", out)
-        self.assertIn("  org.lib:extra:1 (test, optional)", out)
-
-    def test_test_mode_is_not_ready(self) -> None:
-        """Тестовый режим на этом этапе сообщает об ошибке."""
-        with tempfile.NamedTemporaryFile() as repo_file:
-            code, _, err = self.run_app("-p", "A", "-m", "test",
-                                        "-s", repo_file.name)
-        self.assertEqual(code, 1)
-        self.assertIn("repository error", err)
+        self.assertEqual(children, [
+            "org.lib:plain:3.1", "org.lib:managed:2.5", "org.demo:core:1.0",
+        ])
+        self.assertEqual(missing, [])
+        self.assertIn("org.demo:none:1.0", source.problems)
 
 
 if __name__ == "__main__":

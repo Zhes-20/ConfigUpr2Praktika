@@ -1,7 +1,7 @@
 # Визуализатор графа зависимостей Maven (вариант 8)
 
 Практическая работа №2 по дисциплине «Конфигурационное управление».
-Готовы этапы 1–2 из 5: конфигурация и сбор данных.
+Готовы этапы 1–3 из 5: конфигурация, сбор данных, основные операции.
 
 ## Общее описание
 
@@ -10,8 +10,9 @@
 не используются: описание пакета (`pom.xml`) скачивается по URL
 репозитория и разбирается стандартными модулями Python.
 
-На этапе 2 приложение выводит прямые зависимости заданного пакета.
-Вывод параметров в формате `ключ=значение` был только на этапе 1.
+На этапе 3 приложение строит граф зависимостей с учётом транзитивности
+и выводит его списком рёбер. Вывод параметров был только на этапе 1,
+вывод одних прямых зависимостей — только на этапе 2.
 
 ## Функции и настройки
 
@@ -37,8 +38,6 @@
 Если опция `-p` не задана совсем, справку и ошибку печатает `argparse`,
 код завершения 2.
 
-Тестовый режим (`-m test`) появится на этапе 3; сейчас он сообщает об ошибке.
-
 ### Как находятся прямые зависимости
 
 1. По координатам строится адрес файла:
@@ -54,6 +53,51 @@
 
 Ошибки: пакета нет в репозитории, нет связи, повреждённый `pom.xml`.
 
+### Построение графа
+
+Алгоритм — обход в глубину (DFS) **без рекурсии**, по явному стеку
+(`src/graph.py`, функция `build_graph`).
+
+- Для графа берутся зависимости, которые Maven переносит транзитивно:
+  область `compile` или `runtime`, без `optional`. Зависимости `test`
+  и `provided` в граф не попадают.
+- Глубина анализируемого пакета — 0. Пакеты на глубине `--depth`
+  попадают в граф, но не раскрываются (в выводе: `not expanded`).
+  Если до пакета позже найден более короткий путь, он раскрывается заново.
+- Пакеты, имя которых содержит подстроку `--exclude`, отбрасываются
+  вместе со всем, что доступно только через них.
+- Циклы ищутся отдельным обходом без рекурсии (`find_cycles`): ребро в пакет,
+  который уже есть в текущем пути. Обход при цикле не зацикливается,
+  каждый цикл выводится строкой `Cycle:`.
+- Если `pom.xml` зависимости получить не удалось, она остаётся листом,
+  причина выводится строкой `Not loaded:`.
+
+### Тестовый репозиторий (`-m test`)
+
+Вместо URL указывается путь к текстовому файлу. Пакеты называются
+большими латинскими буквами:
+
+```
+# комментарий
+A -> B, C
+B -> D
+C -> D
+D ->
+```
+
+Примеры в `examples/repos/`:
+
+| Файл | Случай |
+|---|---|
+| `simple.txt` | две прямые зависимости |
+| `diamond.txt` | общая зависимость (ромб) |
+| `chain.txt` | длинная цепочка, проверка `--depth` |
+| `exclude.txt` | проверка `--exclude TEST` |
+| `cycle.txt` | цикл `A -> B -> C -> A` |
+| `self.txt` | пакет зависит сам от себя |
+| `undefined.txt` | зависимость не описана в файле — лист |
+| `broken.txt` | ошибка формата |
+
 ### Файлы
 
 | Файл | Назначение |
@@ -61,8 +105,11 @@
 | `src/app.py` | точка входа, вывод |
 | `src/config.py` | опции командной строки и их проверка |
 | `src/maven.py` | скачивание и разбор `pom.xml` |
+| `src/graph.py` | обход в глубину без рекурсии, поиск циклов |
+| `src/local_repo.py` | чтение тестового репозитория |
 | `examples/stage1_demo.sh` | все опции и ошибки в них |
 | `examples/stage2_demo.sh` | прямые зависимости настоящих пакетов |
+| `examples/stage3_demo.sh` | граф на всех тестовых репозиториях и на Maven Central |
 
 ## Сборка и тесты
 
@@ -70,7 +117,7 @@
 
 ```bash
 make test                 # модульные тесты
-make demo                 # примеры этапов 1 и 2
+make demo                 # примеры этапов 1–3
 ./run.sh -p junit:junit:4.13.2
 ```
 
@@ -84,23 +131,35 @@ python3 -m src.app -p junit:junit:4.13.2
 ## Примеры использования
 
 ```
+$ ./run.sh -p A -m test -s examples/repos/cycle.txt
+Dependency graph of A (max depth 5, exclude: -)
+A -> B
+B -> C
+C -> A, D
+D -> (none)
+Packages: 4
+Cycle: A -> B -> C -> A
+
+$ ./run.sh -p A -m test -s examples/repos/chain.txt -d 2
+Dependency graph of A (max depth 2, exclude: -)
+A -> B
+B -> C
+C -> (not expanded: max depth)
+Packages: 3
+
+$ ./run.sh -p A -m test -s examples/repos/exclude.txt -e TEST
+Dependency graph of A (max depth 5, exclude: TEST)
+A -> B
+B -> C
+C -> (none)
+Packages: 3
+
 $ ./run.sh -p junit:junit:4.13.2
-Direct dependencies of junit:junit:4.13.2:
-  org.hamcrest:hamcrest-core:1.3 (compile)
-  org.hamcrest:hamcrest-library:1.3 (test)
+Dependency graph of junit:junit:4.13.2 (max depth 5, exclude: -)
+junit:junit:4.13.2 -> org.hamcrest:hamcrest-core:1.3
+org.hamcrest:hamcrest-core:1.3 -> (none)
+Packages: 2
 
-$ ./run.sh -p com.google.guava:guava:32.1.3-jre
-Direct dependencies of com.google.guava:guava:32.1.3-jre:
-  com.google.guava:failureaccess:1.0.1 (compile)
-  com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava (compile)
-  com.google.code.findbugs:jsr305:3.0.2 (compile)
-  org.checkerframework:checker-qual:3.37.0 (compile)
-  com.google.errorprone:error_prone_annotations:2.21.1 (compile)
-  com.google.j2objc:j2objc-annotations:2.8 (compile)
-
-$ ./run.sh -p org.example:no-such-package:1.0
-repository error: not found in repository: https://repo1.maven.org/maven2/org/example/no-such-package/1.0/no-such-package-1.0.pom
-
-$ ./run.sh -p junit:junit:4.13.2 -d 0
-config error: depth: must be at least 1, got 0
+$ ./run.sh -p Z -m test -s examples/repos/simple.txt
+error: package Z is not defined
 ```
