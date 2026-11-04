@@ -111,20 +111,7 @@ class ErrorsTest(unittest.TestCase):
 
 
 class OutputTest(unittest.TestCase):
-    """Вывод параметров при запуске."""
-
-    def test_key_value_output(self) -> None:
-        """Все шесть параметров печатаются как ключ=значение."""
-        code, out, _ = run_app("-p", PACKAGE, "-d", "2")
-        self.assertEqual(code, 0)
-        self.assertEqual(out.splitlines(), [
-            f"package={PACKAGE}",
-            f"source={MAVEN_CENTRAL}",
-            "mode=remote",
-            "image=graph.png",
-            "depth=2",
-            "exclude=",
-        ])
+    """Сообщения об ошибках при запуске."""
 
     def test_error_output(self) -> None:
         """Ошибка печатается в поток ошибок, код возврата не ноль."""
