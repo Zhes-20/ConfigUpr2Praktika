@@ -4,7 +4,7 @@ import os
 import tempfile
 import unittest
 
-from src.graph import GraphError, build_graph, find_cycles, load_order
+from src.graph import GraphError, build_graph, find_cycles
 from src.local_repo import LocalRepoError, load_local_repo, parse_local_repo
 
 REPOS = os.path.join(os.path.dirname(__file__), "..", "examples", "repos")
@@ -113,43 +113,6 @@ class TraversalTest(unittest.TestCase):
         graph = build_graph(names[0], lambda item: links.get(item, []), size)
         self.assertEqual(len(graph.nodes()), size)
         self.assertEqual(find_cycles(graph.edges, names[0]), [])
-
-
-class LoadOrderTest(unittest.TestCase):
-    """Порядок загрузки зависимостей."""
-
-    def assert_before(self, order: list, first: str, second: str) -> None:
-        """Проверяет, что first стоит в списке раньше second."""
-        self.assertLess(order.index(first), order.index(second))
-
-    def test_diamond(self) -> None:
-        """Каждый пакет идёт после своих зависимостей, без повторов."""
-        order = load_order(graph_of("diamond.txt"))
-        self.assertEqual(order, ["D", "B", "C", "A"])
-
-    def test_chain(self) -> None:
-        """Цепочка загружается с конца."""
-        self.assertEqual(load_order(graph_of("chain.txt")),
-                         ["F", "E", "D", "C", "B", "A"])
-
-    def test_depth_and_exclude(self) -> None:
-        """Ограничения графа действуют и на порядок."""
-        self.assertEqual(load_order(graph_of("chain.txt", depth=2)),
-                         ["C", "B", "A"])
-        order = load_order(graph_of("exclude.txt", exclude="TEST"))
-        self.assertEqual(order, ["C", "B", "A"])
-
-    def test_cycle(self) -> None:
-        """При цикле обход завершается, каждый пакет назван один раз."""
-        order = load_order(graph_of("cycle.txt"))
-        self.assertEqual(sorted(order), ["A", "B", "C", "D"])
-        self.assert_before(order, "D", "C")
-        self.assertEqual(order[-1], "A")
-
-    def test_root_is_last(self) -> None:
-        """Анализируемый пакет загружается последним."""
-        for name in ("simple.txt", "self.txt", "undefined.txt"):
-            self.assertEqual(load_order(graph_of(name))[-1], "A")
 
 
 if __name__ == "__main__":

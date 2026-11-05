@@ -1,7 +1,7 @@
 # Визуализатор графа зависимостей Maven (вариант 8)
 
 Практическая работа №2 по дисциплине «Конфигурационное управление».
-Готовы этапы 1–4 из 5: конфигурация, сбор данных, основные и дополнительные операции.
+Готовы все 5 этапов: конфигурация, сбор данных, основные и дополнительные операции, визуализация.
 
 ## Общее описание
 
@@ -10,10 +10,12 @@
 не используются: описание пакета (`pom.xml`) скачивается по URL
 репозитория и разбирается стандартными модулями Python.
 
-На этапе 3 приложение строит граф зависимостей с учётом транзитивности
-и выводит его списком рёбер. Вывод параметров был только на этапе 1,
-вывод одних прямых зависимостей — только на этапе 2.
-С опцией `-l` выводится порядок загрузки зависимостей (этап 4).
+Приложение строит граф зависимостей с учётом транзитивности, печатает
+его описание на языке Graphviz и сохраняет картинку PNG.
+
+По заданию часть вывода была только на своём этапе: параметры
+`ключ=значение` — этап 1, прямые зависимости — этап 2, порядок загрузки
+(опция `-l`) — этап 4. Их можно посмотреть в истории коммитов.
 
 ## Функции и настройки
 
@@ -25,7 +27,6 @@
 | `-o`, `--image` | имя PNG-файла с изображением графа | `graph.png` |
 | `-d`, `--depth` | максимальная глубина анализа, целое от 1 | `5` |
 | `-e`, `--exclude` | не учитывать пакеты, имя которых содержит подстроку | пусто |
-| `-l`, `--load-order` | вывести порядок загрузки зависимостей вместо графа | выключена |
 
 Ошибки, которые проверяются:
 
@@ -74,24 +75,70 @@
 - Если `pom.xml` зависимости получить не удалось, она остаётся листом,
   причина выводится строкой `Not loaded:`.
 
-### Порядок загрузки (`-l`)
+### Визуализация (этап 5)
+
+Модуль `src/dot.py` формирует текст на языке Graphviz:
+
+```
+digraph dependencies {
+    rankdir=LR;
+    node [shape=box, fontname=Helvetica];
+    "A" [label="A", style=filled, fillcolor=lightblue];
+    "B" [label="B"];
+    "A" -> "B" [color=red];
+}
+```
+
+- анализируемый пакет закрашен голубым;
+- рёбра циклов красные;
+- пакет, не раскрытый из-за `--depth`, обведён точками;
+- пакет, чей `pom.xml` не загрузился, — серой пунктирной рамкой;
+- у пакетов Maven версия на второй строке подписи.
+
+Текст печатается на экран и сохраняется рядом с картинкой (`graph.dot`),
+картинку `graph.png` рисует программа `dot` из пакета Graphviz
+(`brew install graphviz`). Если Graphviz не установлен, файл `.dot`
+остаётся, программа сообщает об ошибке.
+
+Примеры для трёх пакетов — `examples/stage5_demo.sh`, картинки появляются
+в папке `output/` (она не хранится в репозитории):
+`spring-context`, `okhttp`, `logback-classic` и тестовые графы.
+
+### Сравнение со штатной визуализацией Maven
+
+Штатный способ нарисовать граф в Maven:
+`mvn dependency:tree -DoutputType=dot`. Скрипт
+`examples/compare_with_maven.sh ПАКЕТ` выводит дерево Maven и рисует обе
+картинки: `output/ИМЯ.png` (этот инструмент) и `output/ИМЯ-maven.png`.
+
+Различия на `spring-context:6.0.13`:
+
+| | Этот инструмент | Maven |
+|---|---|---|
+| вид | граф: все рёбра, у пакета может быть несколько стрелок на входе | дерево: каждый пакет показан один раз, только по первому пути |
+| рёбер | 9 | 5 (без учёта корня) |
+| корень | анализируемый пакет | искусственный проект `compare:compare`, из которого он подключён |
+| подпись | `группа:артефакт` и версия | `группа:артефакт:jar:версия:область` |
+
+Например, `spring-aop -> spring-core` здесь есть, а у Maven нет: Maven
+уже показал `spring-core` как прямую зависимость `spring-context` и второй
+раз его не рисует.
+
+Различия на `okhttp:4.12.0` — те же, что в порядке загрузки ниже: Maven
+оставляет одну версию `kotlin-stdlib` (1.8.21), здесь в графе обе.
+
+### Порядок загрузки (этап 4)
 
 Пакет можно загрузить только после всех его зависимостей. Порядок
-строится обратным обходом в глубину без рекурсии (`load_order` в
-`src/graph.py`): пакет попадает в список, когда пройдены все его
-зависимости. Анализируемый пакет всегда последний. Для пакетов цикла
-такого порядка не существует: они помечены `(cycle)`, ребро, замыкающее
-цикл, при построении порядка пропускается.
+строился обратным обходом в глубину без рекурсии: пакет попадал в
+список, когда пройдены все его зависимости; анализируемый пакет —
+последний; пакеты цикла помечались `(cycle)`. Режим выводился только на
+этапе 4 (коммит `feat(order)`).
 
-### Сравнение с Maven
+#### Сравнение порядка с Maven 3.10.0
 
-Скрипт `examples/compare_with_maven.sh ПАКЕТ` создаёт временный проект
-с одной зависимостью и выводит рядом результат этого инструмента,
-`mvn dependency:tree` и `mvn dependency:build-classpath` (порядок, в котором
-Maven отдаёт библиотеки Java). Нужен установленный Maven
-(`brew install maven`).
-
-### Результаты сравнения (Maven 3.10.0)
+Сравнивалось с `mvn dependency:tree` и `mvn dependency:build-classpath`
+(порядок, в котором Maven отдаёт библиотеки Java).
 
 | Пакет | Этот инструмент | Maven |
 |---|---|---|
@@ -165,19 +212,21 @@ D ->
 | `src/maven.py` | скачивание и разбор `pom.xml` |
 | `src/graph.py` | обход в глубину без рекурсии, поиск циклов |
 | `src/local_repo.py` | чтение тестового репозитория |
+| `src/dot.py` | текст Graphviz и картинка PNG |
 | `examples/stage1_demo.sh` | все опции и ошибки в них |
 | `examples/stage2_demo.sh` | прямые зависимости настоящих пакетов |
 | `examples/stage3_demo.sh` | граф на всех тестовых репозиториях и на Maven Central |
-| `examples/stage4_demo.sh` | порядок загрузки |
-| `examples/compare_with_maven.sh` | сравнение с настоящим Maven |
+| `examples/stage5_demo.sh` | картинки для трёх пакетов и тестовых графов |
+| `examples/compare_with_maven.sh` | сравнение с настоящим Maven и его картинкой |
 
 ## Сборка и тесты
 
-Сборка не нужна, требуется Python 3.9+. Сторонние пакеты не нужны.
+Сборка не нужна, требуется Python 3.9+ и Graphviz для картинки.
+Сторонние пакеты Python не нужны. Для сравнения нужен Maven.
 
 ```bash
 make test                 # модульные тесты
-make demo                 # примеры этапов 1–4
+make demo                 # примеры этапов 1, 2, 3, 5
 ./run.sh -p junit:junit:4.13.2
 ```
 
@@ -191,53 +240,33 @@ python3 -m src.app -p junit:junit:4.13.2
 ## Примеры использования
 
 ```
-$ ./run.sh -p A -m test -s examples/repos/cycle.txt
-Dependency graph of A (max depth 5, exclude: -)
-A -> B
-B -> C
-C -> A, D
-D -> (none)
-Packages: 4
-Cycle: A -> B -> C -> A
+$ ./run.sh -p A -m test -s examples/repos/cycle.txt -o cycle.png
+digraph dependencies {
+    rankdir=LR;
+    node [shape=box, fontname=Helvetica];
+    "A" [label="A", style=filled, fillcolor=lightblue];
+    "B" [label="B"];
+    "C" [label="C"];
+    "D" [label="D"];
+    "A" -> "B" [color=red];
+    "B" -> "C" [color=red];
+    "C" -> "A" [color=red];
+    "C" -> "D";
+}
+cycle: A -> B -> C -> A
+saved: cycle.dot
+saved: cycle.png
 
-$ ./run.sh -p A -m test -s examples/repos/chain.txt -d 2
-Dependency graph of A (max depth 2, exclude: -)
-A -> B
-B -> C
-C -> (not expanded: max depth)
-Packages: 3
+$ ./run.sh -p org.springframework:spring-context:6.0.13 -o spring.png
+digraph dependencies {
+...
+}
+saved: spring.dot
+saved: spring.png
 
-$ ./run.sh -p A -m test -s examples/repos/exclude.txt -e TEST
-Dependency graph of A (max depth 5, exclude: TEST)
-A -> B
-B -> C
-C -> (none)
-Packages: 3
+$ ./run.sh -p org.example:no-such-package:1.0
+error: not found in repository: https://repo1.maven.org/maven2/org/example/no-such-package/1.0/no-such-package-1.0.pom
 
-$ ./run.sh -p junit:junit:4.13.2
-Dependency graph of junit:junit:4.13.2 (max depth 5, exclude: -)
-junit:junit:4.13.2 -> org.hamcrest:hamcrest-core:1.3
-org.hamcrest:hamcrest-core:1.3 -> (none)
-Packages: 2
-
-$ ./run.sh -p A -m test -s examples/repos/diamond.txt -l
-Dependency graph of A (max depth 5, exclude: -)
-Load order (dependencies first):
-   1. D
-   2. B
-   3. C
-   4. A
-
-$ ./run.sh -p org.springframework:spring-context:6.0.13 -l
-Dependency graph of org.springframework:spring-context:6.0.13 (max depth 5, exclude: -)
-Load order (dependencies first):
-   1. org.springframework:spring-jcl:6.0.13
-   2. org.springframework:spring-core:6.0.13
-   3. org.springframework:spring-beans:6.0.13
-   4. org.springframework:spring-aop:6.0.13
-   5. org.springframework:spring-expression:6.0.13
-   6. org.springframework:spring-context:6.0.13
-
-$ ./run.sh -p Z -m test -s examples/repos/simple.txt
-error: package Z is not defined
+$ ./run.sh -p junit:junit:4.13.2 -o graph.svg
+config error: image: 'graph.svg' must be a .png file name
 ```

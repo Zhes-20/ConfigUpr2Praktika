@@ -1,19 +1,15 @@
 """Точка входа: python -m src.app --package ..."""
 
 import sys
-from typing import Dict, List, Optional, Sequence
+from typing import List, Optional, Sequence
 
 from src.config import Config, ConfigError, load_config
-from src.graph import (
-    DependencyGraph,
-    GraphError,
-    build_graph,
-    load_order,
-)
+from src.dot import RenderError, render_png, to_dot
+from src.graph import DependencyGraph, GraphError, build_graph
 from src.local_repo import LocalRepoError, load_local_repo
 from src.maven import MavenSource, RepositoryError, direct_dependencies
 
-ERRORS = (RepositoryError, LocalRepoError, GraphError)
+ERRORS = (RepositoryError, LocalRepoError, GraphError, RenderError, OSError)
 
 
 def graph_from_test_repo(config: Config) -> DependencyGraph:
@@ -34,48 +30,25 @@ def graph_from_maven(config: Config) -> tuple:
     return graph, source.problems
 
 
-def render(graph: DependencyGraph, problems: Dict[str, str]) -> List[str]:
-    """Готовит текстовый вывод графа."""
-    lines = []
-    for name in graph.nodes():
-        children = graph.edges.get(name)
-        if children is None:
-            lines.append(f"{name} -> (not expanded: max depth)")
-        else:
-            lines.append(f"{name} -> {', '.join(children) or '(none)'}")
-    lines.append(f"Packages: {len(graph.nodes())}")
-    for cycle in graph.cycles:
-        lines.append("Cycle: " + " -> ".join(cycle))
-    for name, reason in problems.items():
-        lines.append(f"Not loaded: {name}: {reason}")
-    return lines
-
-
-def render_order(graph: DependencyGraph) -> List[str]:
-    """Готовит нумерованный порядок загрузки."""
-    lines = ["Load order (dependencies first):"]
-    in_cycle = {name for cycle in graph.cycles for name in cycle}
-    for number, name in enumerate(load_order(graph), start=1):
-        mark = " (cycle)" if name in in_cycle else ""
-        lines.append(f"{number:4}. {name}{mark}")
-    return lines
-
-
 def run(config: Config) -> List[str]:
-    """Строит граф в выбранном режиме и возвращает строки вывода."""
+    """Строит граф, печатает его на языке Graphviz и рисует PNG."""
     if config.mode == "test":
         graph, problems = graph_from_test_repo(config), {}
     else:
         graph, problems = graph_from_maven(config)
-    title = (f"Dependency graph of {config.package} "
-             f"(max depth {config.depth}, exclude: {config.exclude or '-'})")
-    if config.load_order:
-        return [title] + render_order(graph)
-    return [title] + render(graph, problems)
+    dot_text = to_dot(graph, problems)
+    lines = [dot_text.rstrip("\n")]
+    lines.extend(f"cycle: {' -> '.join(cycle)}" for cycle in graph.cycles)
+    lines.extend(f"not loaded: {name}: {reason}"
+                 for name, reason in problems.items())
+    dot_path = render_png(dot_text, config.image)
+    lines.append(f"saved: {dot_path}")
+    lines.append(f"saved: {config.image}")
+    return lines
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    """Строит и выводит граф зависимостей или сообщает об ошибке."""
+    """Строит и рисует граф зависимостей или сообщает об ошибке."""
     try:
         config = load_config(argv)
     except ConfigError as error:

@@ -79,27 +79,3 @@ def find_cycles(edges: Dict[str, List[str]], root: str) -> List[List[str]]:
             stack.append(iter(edges.get(child, [])))
     return cycles
 
-
-def load_order(graph: DependencyGraph) -> List[str]:
-    """Порядок загрузки: каждый пакет после всех своих зависимостей.
-
-    Обратный обход в глубину без рекурсии: пакет попадает в список,
-    когда пройдены все его зависимости. Ребро в пакет из текущего пути
-    (цикл) пропускается, поэтому для пакетов цикла порядок условный.
-    """
-    order: List[str] = []
-    done = set()
-    on_path = {graph.root}
-    stack = [(graph.root, iter(graph.edges.get(graph.root, [])))]
-    while stack:
-        name, pending = stack[-1]
-        child = next(pending, None)
-        if child is None:
-            stack.pop()
-            on_path.discard(name)
-            done.add(name)
-            order.append(name)
-        elif child not in done and child not in on_path:
-            on_path.add(child)
-            stack.append((child, iter(graph.edges.get(child, []))))
-    return order
