@@ -58,5 +58,26 @@ class AppTest(unittest.TestCase):
         self.assertIn("line 3", err)
 
 
+class LoadOrderAppTest(unittest.TestCase):
+    """Режим вывода порядка загрузки."""
+
+    def test_numbered_order(self) -> None:
+        """Порядок выводится нумерованным списком."""
+        code, out, _ = run_app("-p", "A", "-m", "test", "-l",
+                               "-s", repo("diamond.txt"))
+        self.assertEqual(code, 0)
+        lines = out.splitlines()
+        self.assertEqual(lines[1], "Load order (dependencies first):")
+        self.assertEqual(lines[2:], ["   1. D", "   2. B", "   3. C",
+                                     "   4. A"])
+
+    def test_cycle_is_marked(self) -> None:
+        """Пакеты цикла помечаются."""
+        _, out, _ = run_app("-p", "A", "-m", "test", "--load-order",
+                            "-s", repo("cycle.txt"))
+        self.assertIn("A (cycle)", out)
+        self.assertNotIn("D (cycle)", out)
+
+
 if __name__ == "__main__":
     unittest.main()

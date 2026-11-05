@@ -4,7 +4,12 @@ import sys
 from typing import Dict, List, Optional, Sequence
 
 from src.config import Config, ConfigError, load_config
-from src.graph import DependencyGraph, GraphError, build_graph
+from src.graph import (
+    DependencyGraph,
+    GraphError,
+    build_graph,
+    load_order,
+)
 from src.local_repo import LocalRepoError, load_local_repo
 from src.maven import MavenSource, RepositoryError, direct_dependencies
 
@@ -46,6 +51,16 @@ def render(graph: DependencyGraph, problems: Dict[str, str]) -> List[str]:
     return lines
 
 
+def render_order(graph: DependencyGraph) -> List[str]:
+    """Готовит нумерованный порядок загрузки."""
+    lines = ["Load order (dependencies first):"]
+    in_cycle = {name for cycle in graph.cycles for name in cycle}
+    for number, name in enumerate(load_order(graph), start=1):
+        mark = " (cycle)" if name in in_cycle else ""
+        lines.append(f"{number:4}. {name}{mark}")
+    return lines
+
+
 def run(config: Config) -> List[str]:
     """Строит граф в выбранном режиме и возвращает строки вывода."""
     if config.mode == "test":
@@ -54,6 +69,8 @@ def run(config: Config) -> List[str]:
         graph, problems = graph_from_maven(config)
     title = (f"Dependency graph of {config.package} "
              f"(max depth {config.depth}, exclude: {config.exclude or '-'})")
+    if config.load_order:
+        return [title] + render_order(graph)
     return [title] + render(graph, problems)
 
 

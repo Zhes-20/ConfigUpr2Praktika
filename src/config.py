@@ -29,6 +29,7 @@ class Config:
     image: str
     depth: int
     exclude: str
+    load_order: bool = False
 
     def items(self) -> List[Tuple[str, str]]:
         """Возвращает параметры парами ключ-значение."""
@@ -39,6 +40,7 @@ class Config:
             ("image", self.image),
             ("depth", str(self.depth)),
             ("exclude", self.exclude),
+            ("load_order", str(self.load_order).lower()),
         ]
 
 
@@ -71,6 +73,10 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-e", "--exclude", default="",
         help="не учитывать пакеты, имя которых содержит подстроку",
+    )
+    parser.add_argument(
+        "-l", "--load-order", action="store_true",
+        help="вывести порядок загрузки зависимостей",
     )
     return parser
 
@@ -147,4 +153,5 @@ def load_config(argv: Optional[Sequence[str]] = None) -> Config:
         image=check_image(args.image),
         depth=check_depth(args.depth),
         exclude=check_exclude(args.exclude),
+        load_order=args.load_order,
     )
