@@ -9,7 +9,6 @@
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Tuple
 
-Children = Callable[[str], List[str]]
 
 
 class GraphError(Exception):
@@ -38,7 +37,8 @@ def is_excluded(name: str, exclude: str) -> bool:
     return bool(exclude) and exclude in name
 
 
-def build_graph(root: str, children_of: Children, max_depth: int,
+def build_graph(root: str, children_of: Callable[[str], List[str]],
+                max_depth: int,
                 exclude: str = "") -> DependencyGraph:
     """Строит граф транзитивных зависимостей пакета root."""
     if is_excluded(root, exclude):
