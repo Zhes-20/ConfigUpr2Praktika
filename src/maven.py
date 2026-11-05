@@ -10,7 +10,7 @@ import functools
 import re
 import urllib.error
 import urllib.request
-import xml.etree.ElementTree as ElementTree
+import xml.etree.ElementTree as etree
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -72,13 +72,13 @@ def download(url: str) -> bytes:
         raise RepositoryError(f"cannot download {url}: {error}") from error
 
 
-def strip_namespaces(root: ElementTree.Element) -> None:
+def strip_namespaces(root: etree.Element) -> None:
     """Убирает пространство имён из тегов, чтобы искать по коротким."""
     for element in root.iter():
         element.tag = element.tag.split("}")[-1]
 
 
-def text_of(element: Optional[ElementTree.Element], tag: str) -> str:
+def text_of(element: Optional[etree.Element], tag: str) -> str:
     """Возвращает текст вложенного тега или пустую строку."""
     if element is None:
         return ""
@@ -86,7 +86,7 @@ def text_of(element: Optional[ElementTree.Element], tag: str) -> str:
     return (found.text or "").strip() if found is not None else ""
 
 
-def read_dependency_list(section: Optional[ElementTree.Element]) -> list:
+def read_dependency_list(section: Optional[etree.Element]) -> list:
     """Читает теги dependency из раздела dependencies."""
     if section is None:
         return []
@@ -97,17 +97,17 @@ def read_dependency_list(section: Optional[ElementTree.Element]) -> list:
     ]
 
 
-def read_root(data: bytes) -> ElementTree.Element:
+def read_root(data: bytes) -> etree.Element:
     """Разбирает XML и возвращает корневой элемент без пространств имён."""
     try:
-        root = ElementTree.fromstring(data)
-    except ElementTree.ParseError as error:
+        root = etree.fromstring(data)
+    except etree.ParseError as error:
         raise RepositoryError(f"invalid pom.xml: {error}") from error
     strip_namespaces(root)
     return root
 
 
-def read_management(pom: Pom, root: ElementTree.Element) -> None:
+def read_management(pom: Pom, root: etree.Element) -> None:
     """Читает dependencyManagement: версии и импортируемые BOM."""
     section = root.find("dependencyManagement/dependencies")
     for item in read_dependency_list(section):
